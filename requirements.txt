@@ -1,0 +1,10 @@
+fastapi~=0.116.1
+SQLAlchemy~=2.0.41
+aiogram~=3.21.0
+starlette~=0.47.1
+uvicorn~=0.35.0
+bcrypt~=4.3.0
+alembic~=1.16.4
+pydantic-settings~=2.10.1
+asyncpg
+psycopg2-binary
