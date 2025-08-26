@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import aliased
 
@@ -11,9 +12,17 @@ from database.models import User, Account, Transaction
 
 router = APIRouter(prefix="/me")
 
-MONTHS_NOMINATIVE = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь",
-                     "Ноябрь", "Декабрь"]
+MONTHS_NOMINATIVE = [
+    "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+]
 
+Moscow_TZ = ZoneInfo("Europe/Moscow")
+
+def to_local(dt_utc: datetime) -> datetime:
+    if dt_utc.tzinfo is None:
+        dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+    return dt_utc.astimezone(Moscow_TZ)
 
 @router.get("/summary")
 async def get_summary(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
@@ -21,8 +30,9 @@ async def get_summary(user=Depends(get_current_user), db: AsyncSession = Depends
     if not uid:
         raise HTTPException(404, "User not found")
 
-    now = datetime.utcnow()
-    month_start = datetime(now.year, now.month, 1)
+    now_local = datetime.now(Moscow_TZ)
+    month_start_local = datetime(now_local.year, now_local.month, 1, tzinfo=Moscow_TZ)
+    month_start_utc_naive = month_start_local.astimezone(timezone.utc).replace(tzinfo=None)
 
     sa = aliased(Account)
     ta = aliased(Account)
@@ -46,7 +56,7 @@ async def get_summary(user=Depends(get_current_user), db: AsyncSession = Depends
         .join(ta, ta.id == Transaction.target_account_id)
         .where(
             ((sa.owner_id == uid) | (ta.owner_id == uid)) &
-            (Transaction.created_at >= month_start) &
+            (Transaction.created_at >= month_start_utc_naive) &
             (Transaction.status == "confirmed")
         )
         .order_by(Transaction.created_at.desc())
@@ -67,20 +77,20 @@ async def get_summary(user=Depends(get_current_user), db: AsyncSession = Depends
         })
 
     for amount, created_at, source_owner, target_owner, from_nick, to_nick in rows:
-        created = created_at.date().isoformat()
+        created_local = to_local(created_at)
+        date_iso = created_local.date().isoformat()
+
         out_user = source_owner == uid
         in_user = target_owner == uid
-        internal = out_user and in_user
-
-        if internal:
+        if out_user and in_user:
             continue
 
         sign = -1 if out_user else 1
         name = to_nick if out_user else from_nick
-        push(sign, name, created, amount)
+        push(sign, name, date_iso, amount)
 
     return {
         "total": total,
-        "monthLabel": MONTHS_NOMINATIVE[now.month],
-        "entries": list(reversed(entries)),
+        "monthLabel": MONTHS_NOMINATIVE[now_local.month],
+        "entries": list(reversed(entries)),  # по возрастанию даты в пределах месяца
     }

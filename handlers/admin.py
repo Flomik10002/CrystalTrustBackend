@@ -2,7 +2,7 @@ from datetime import datetime
 
 from aiogram import Router, types
 from aiogram.filters import Command
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from database.engine import SessionLocal
 from database.models import Transaction, Account, User
@@ -15,8 +15,19 @@ async def get_user_account(db, nickname: str):
     user = await db.scalar(select(User).where(User.nickname == nickname))
     if not user:
         return None, None
-    acc = await db.scalar(select(Account).where(Account.owner_id == user.id))
-    return user, acc
+
+    personal_acc = await db.scalar(
+        select(Account)
+        .where(
+            Account.owner_id == user.id,
+            func.lower(Account.account_type) == "personal"
+        )
+        .limit(1)
+    )
+    if not personal_acc:
+        return user, None
+
+    return user, personal_acc
 
 async def get_bank_account(db):
     bank_user = await db.scalar(select(User).where(User.tg_id == 0))
