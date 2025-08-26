@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from aiogram import Bot
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import get_current_user
-from bot_instance import get_bot
 from database.deps import get_session
 from database.models import Account, User
 from services.transfer import (
@@ -18,7 +16,7 @@ router = APIRouter(prefix="/me")
 async def create_transfer(request: Request,
                           user=Depends(get_current_user),
                           db: AsyncSession = Depends(get_session),
-                          bot: Bot = Depends(get_bot)):
+                          ):
     data = await request.json()
 
     recipient_type = data.get("recipient_type")
@@ -53,11 +51,5 @@ async def create_transfer(request: Request,
         .where(Account.account_id == recipient_public_id)
     )
     nick = nick or "Неизвестно"
-
-    await bot.send_message(
-        chat_id=user["id"],
-        text=(f"Подтвердите перевод {amount} АР игроку *{nick}* с помощью кода:\n`/confirm {code}`"),
-        parse_mode="Markdown",
-    )
 
     return {"status": "pending"}
